@@ -1,24 +1,22 @@
+
 #[allow(dead_code)]
 pub mod http_server {
     use request::*;
-    use std::net::{TcpListener, TcpStream};
-    use std::io::{Read, Write};
+    use response::*;
+    use std::net::{TcpListener};
+    use std::io::{Read};
+    use std::cell::RefCell;
+    use std::rc::Rc;
 
 
     pub trait Handler {
-        fn handle(&mut self, &mut Request);
-    }
-
-    impl Handler for Box<Handler> {
-        fn handle(&mut self, req: &mut Request) {
-            (**self).handle(req)
-        }
+        fn handle(&mut self, &mut Request, &mut Response);
     }
 
     impl<F> Handler for F
-    where F: Send + Sync + 'static + FnMut(&mut Request)  {
-        fn handle(&mut self, req: &mut Request)  {
-            (*self)(req)
+    where F: Send + Sync + 'static + FnMut(&mut Request, &mut Response)  {
+        fn handle(&mut self, req: &mut Request, res: &mut Response)  {
+            (*self)(req, res)
         }
     }
 
@@ -47,11 +45,12 @@ pub mod http_server {
             println!("Server running on address {}", &self.addr);
 
             for stream in sock.incoming() {
-                let mut tcp_stream = stream.expect("Something wrong");
-                if let Ok(_) = tcp_stream.read(&mut buffer) {
-                    let mut req = Request::new(tcp_stream, & buffer);
-                    self.handlers.handle(&mut req);
+                let rc_stream = Rc::new(RefCell::new(stream.expect("Something wrong with stream")));
+                {
+                    rc_stream.borrow_mut().read(&mut buffer);
                 }
+                self.handlers.handle(&mut Request::new(rc_stream.clone(), &buffer),
+                    &mut Response::new(rc_stream.clone()));
             }
         }
 
@@ -61,7 +60,10 @@ pub mod http_server {
 pub mod workspace {
     pub use request::Request;
     pub use router::Router;
+    pub use response::Response;
 }
 
 pub mod request;
 pub mod router;
+pub mod headers;
+pub mod response;
